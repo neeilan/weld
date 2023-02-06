@@ -1,4 +1,3 @@
-use elf;
 
 use std::vec::Vec;
 
@@ -6,7 +5,14 @@ use std::vec::Vec;
 pub fn parse(bytes : Vec<u8>) -> elf::File {
     println!("{}-byte ELF file", bytes.len());
 
-    return elf::File{}
+    let mut file = elf::File::default();
+
+    let file_hdr_size = std::mem::size_of::<elf::FileHeader>();
+    let hdr_bytes = &bytes[..file_hdr_size];
+    file.file_header = unsafe { std::ptr::read(hdr_bytes.as_ptr() as *const _) };
+    println!("{:?}", file.file_header);
+
+    return file;
 }
 
 pub fn add(left: usize, right: usize) -> usize {
