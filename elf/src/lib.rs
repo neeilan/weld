@@ -1,3 +1,13 @@
+pub struct File {}
+
+pub struct FileHeader {}
+
+pub struct ProgramHeader {}
+
+pub struct SectionHeader {}
+
+
+
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
