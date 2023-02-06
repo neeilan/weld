@@ -1,0 +1,8 @@
+[workspace]
+name = "weld"
+members = [
+    "elf",
+    "elf_parser",
+    "weld_core",
+    "driver"
+]
