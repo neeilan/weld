@@ -55,12 +55,12 @@ pub struct SectionHeader {
     // section name string table [elf-64-hp.pdf]
     pub name: Word,
     pub section_type: SectionType,
-    flags: XWord,
-    virtual_address: Address,
+    pub flags: XWord,
+    pub virtual_address: Address,
     pub offset: FileOffset,
     size: XWord,
     // Semantics of value depend on `section_type`
-    link_to_other_section: Word,
+    pub link_to_other_section: Word,
     misc_info: Word,
     // Must be a power of 2
     address_allignment_boundary: XWord,
@@ -91,6 +91,34 @@ pub enum SectionType {
     ExtendedSectionIndices = 0x12,
     NumberOfDefinedTypes = 0x13,
 
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct RelocationWithAddend {
+   offset : Address, // Location where relocation should be applied
+   pub info : XWord,
+   addend : SignedXWord
+}
+
+impl RelocationWithAddend {
+    pub fn symbol(&self) -> usize {
+        (self.info >> 32) as usize
+    }
+    pub fn relo_type(&self) -> XWord {
+        self.info & 0xffffffff
+    }
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct Symbol {
+    pub name : Word,
+    info : u8,
+    other : u8,
+    relative_to_section : Half,
+    value : Address,
+    size : XWord,
 }
 
 const _ASSERT_SECTION_HDR_SIZE: [u8; 64] = [0; std::mem::size_of::<SectionHeader>()];
