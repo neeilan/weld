@@ -1,3 +1,7 @@
+// There are 3 modules in this crate
+// elf::repr - models on-disk representation
+// elf::logl - logical views of elf representations to perform operations on
+
 // Types - http://www.staroceans.org/e-book/elf-64-hp.pdf
 // The Elf64_ prefix has  been dropped
 type Address = u64;
@@ -21,13 +25,13 @@ pub struct FileHeader {
     machine_type: Half,
     object_file_version: Word,
     entrypoint: Address,
-    program_header_offset: FileOffset,
+    pub program_header_offset: FileOffset,
     pub section_header_offset: FileOffset,
     processor_specific_flags: Word,
     file_header_size: Half,
     program_headers_total_size: Half,
-    program_header_entry_count: Half,
-    pub section_headers_total_size: Half,
+    pub program_header_entry_count: Half,
+    section_headers_total_size: Half,
     pub section_header_entry_count: Half,
     pub sh_section_name_stringtab_entry_index: Half,
 }
@@ -123,3 +127,36 @@ pub struct Symbol {
 
 const _ASSERT_SECTION_HDR_SIZE: [u8; 64] = [0; std::mem::size_of::<SectionHeader>()];
 
+
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct ProgramHeader {
+    pub segment_type: SegmentType,
+    pub flags: Word,
+    pub offset: FileOffset,
+    pub virtual_address: Address,
+    pub physical_address: Address,
+    size_in_file: XWord,
+    size_in_memory: XWord,
+    required_alignment : Address
+}
+
+
+#[derive(Debug, Default)]
+#[repr(u32)]
+pub enum SegmentType {
+    #[default]
+    None = 0x0,
+    Loadable = 0x1,
+    DynamicLinkInfo = 0x2,
+    InterpreterInfo = 0x3,
+    AuxiliaryInfo = 0x4,
+    Reserved = 0x5,
+    ProgramHeaderTableSegment = 0x6,
+    ThreadLocalStorageTemplate = 0x7,
+    GnuEHFrame = 1685382480,
+    GnuStack = 1685382481,
+    GnuRelRO = 1685382482,
+    GnuProperty = 1685382483,
+}
