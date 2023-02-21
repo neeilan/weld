@@ -1,10 +1,12 @@
+pub mod high_level_repr;
+
 // There are 3 modules in this crate
 // elf::repr - models on-disk representation
 // elf::logl - logical views of elf representations to perform operations on
 
 // Types - http://www.staroceans.org/e-book/elf-64-hp.pdf
 // The Elf64_ prefix has  been dropped
-type Address = u64;
+pub type Address = u64;
 type FileOffset = u64;
 type Half = u16;
 type Word = u32;
@@ -62,7 +64,7 @@ pub struct SectionHeader {
     pub flags: XWord,
     pub virtual_address: Address,
     pub offset: FileOffset,
-    size: XWord,
+    pub size: XWord,
     // Semantics of value depend on `section_type`
     pub link_to_other_section: Word,
     misc_info: Word,
@@ -100,15 +102,16 @@ pub enum SectionType {
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct RelocationWithAddend {
-   offset : Address, // Location where relocation should be applied
+   pub offset : Address, // Location where relocation should be applied
    pub info : XWord,
-   addend : SignedXWord
+   pub addend : SignedXWord
 }
 
 impl RelocationWithAddend {
     pub fn symbol(&self) -> usize {
         (self.info >> 32) as usize
     }
+    // Processor-specific: https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter7-2/index.html
     pub fn relo_type(&self) -> XWord {
         self.info & 0xffffffff
     }

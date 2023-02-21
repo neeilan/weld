@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 elf = { path = "../elf" }
 elf_parser = { path = "../elf_parser" }
+weld_core = { path = "../weld_core" }

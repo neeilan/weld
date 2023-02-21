@@ -38,3 +38,28 @@
 
     }
 */
+
+use std::collections::HashMap;
+
+extern crate elf;
+
+#[derive(Debug, Default)]
+pub struct WeldError {}
+
+struct Location {}
+
+pub fn link(inputs : &Vec<elf::high_level_repr::Relocatable>) -> Result<elf::high_level_repr::Executable, Vec<WeldError>> {
+    let mut res = elf::high_level_repr::Executable::default();
+
+    let symbols = HashMap::<String, Location>::new();
+
+    for rel in inputs {
+        let text_idx = rel.find_section(".text").expect("Cannot find .text");
+        res.bytes.extend_from_slice(rel.sections[text_idx].bytes.as_slice())
+    }
+    Ok(res)
+}
+
+pub fn build_header(executable : &elf::high_level_repr::Executable) -> Result<elf::FileHeader , Vec<WeldError>> {
+    Ok(elf::FileHeader::default())
+}

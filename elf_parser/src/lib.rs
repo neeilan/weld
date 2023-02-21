@@ -14,8 +14,11 @@ fn read_cstr(bytes: &Vec<u8>, table_offset: usize, str_offset: usize) -> &str {
     }
 }
 
-pub fn parse(bytes: Vec<u8>) -> elf::File {
-    println!("{}-byte ELF file", bytes.len());
+pub fn parse(path : &str, bytes: Vec<u8>) -> elf::high_level_repr::Relocatable {
+    // println!("{}-byte ELF file", bytes.len());
+
+    let mut result = elf::high_level_repr::Relocatable::default();
+    result.path = path.to_string();
 
     let mut file = elf::File::default();
 
@@ -40,7 +43,7 @@ pub fn parse(bytes: Vec<u8>) -> elf::File {
         } else if matches!(shdr.section_type, elf::SectionType::SymbolTable) {
             symtab_index = i as usize;
         } else if matches!(shdr.section_type, elf::SectionType::StringTable) {
-            if (strtab_index == 0) {
+            if strtab_index == 0 {
                 // HACK: How do we check that this is the program symbol table (not section one)?
                 strtab_index = i as usize;
             }
@@ -56,20 +59,27 @@ pub fn parse(bytes: Vec<u8>) -> elf::File {
     for i in 0..file.file_header.section_header_entry_count {
         let shdr = &section_headers[i as usize];
         let section_name = read_cstr(&bytes, section_name_string_table_offset, shdr.name as usize);
-        println!(
-            "    > Read section header [{:?}] : {:?} {:?}",
-            shdr.section_type, section_name, shdr
-        );
+        // println!(
+        //     "    > Read section header [{:?}] : {:?} {:?}",
+        //     shdr.section_type, section_name, shdr
+        // );
         if shdr.offset > 0 {
             known_offsets.insert(shdr.offset, section_name);
         }
+
+        let mut section = elf::high_level_repr::Section::default();
+        section.name = section_name.to_string();
+        section.bytes = bytes[(shdr.offset as usize)..((shdr.offset as usize) + (shdr.size as usize))].to_vec();
+        section.offset = shdr.offset;
+        section.virtual_address = shdr.virtual_address;
+        result.sections.push(section);
     }
 
-    println!("Symbol table : {:?}", section_headers[symtab_index]);
+    // println!("Symbol table : {:?}", section_headers[symtab_index]);
 
-    println!("Relocations");
+    // println!("Relocations");
     for i in relocation_indices {
-        println!("{:?}", section_headers[i]);
+        // println!("{:?}", section_headers[i]);
 
         let reloc_base: usize = (section_headers[i].offset as usize);
         let reloc_end: usize = reloc_base + std::mem::size_of::<elf::RelocationWithAddend>();
@@ -81,50 +91,58 @@ pub fn parse(bytes: Vec<u8>) -> elf::File {
         let t_bytes = &bytes[(section_headers[symtab_index].offset as usize)
             + (std::mem::size_of::<elf::Symbol>() * reloc.symbol())..];
         let symbol: elf::Symbol = unsafe { std::ptr::read(t_bytes.as_ptr() as *const _) };
+        result.relocations.push(elf::high_level_repr::X64Relocation::from(&reloc, read_cstr(
+            &bytes,
+            section_headers[strtab_index].offset as usize,
+            symbol.name as usize
+        ), ));
 
-        println!(
-            "    > Read relocation {:?} [{:?}] - Symbol {:?}=[{:?}] symname=[{:?}]",
-            reloc,
-            read_cstr(
-                &bytes,
-                section_name_string_table_offset,
-                section_headers[i].name as usize
-            ),
-            reloc.symbol(),
-            symbol,
-            read_cstr(
-                &bytes,
-                section_headers[strtab_index].offset as usize,
-                symbol.name as usize
-            ),
-        )
+        // println!(
+        //     "    > Read relocation {:?} type={:?} [{:?}] - Symbol {:?}=[{:?}] symname=[{:?}]",
+        //     reloc,
+        //     reloc.relo_type(),
+        //     read_cstr(
+        //         &bytes,
+        //         section_name_string_table_offset,
+        //         section_headers[i].name as usize
+        //     ),
+        //     reloc.symbol(),
+        //     symbol,
+        //     read_cstr(
+        //         &bytes,
+        //         section_headers[strtab_index].offset as usize,
+        //         symbol.name as usize
+        //     ),
+        // )
+
+
     }
 
     // Program headers
-    println!(
-        "{} program headers in this file",
-        file.file_header.program_header_entry_count
-    );
+    // println!(
+    //     "{} program headers in this file",
+    //     file.file_header.program_header_entry_count
+    // );
 
-    let mut program_headers = Vec::new();
-    for i in 0..file.file_header.program_header_entry_count {
-        let phdr_base: usize = (file.file_header.program_header_offset as usize)
-            + (i as usize) * std::mem::size_of::<elf::ProgramHeader>();
-        let phdr_end: usize = phdr_base + std::mem::size_of::<elf::ProgramHeader>();
-        let phdr_bytes = &bytes[phdr_base..phdr_end];
+    // let mut program_headers = Vec::new();
+    // for i in 0..file.file_header.program_header_entry_count {
+    //     let phdr_base: usize = (file.file_header.program_header_offset as usize)
+    //         + (i as usize) * std::mem::size_of::<elf::ProgramHeader>();
+    //     let phdr_end: usize = phdr_base + std::mem::size_of::<elf::ProgramHeader>();
+    //     let phdr_bytes = &bytes[phdr_base..phdr_end];
 
-        let phdr: elf::ProgramHeader = unsafe { std::ptr::read(phdr_bytes.as_ptr() as *const _) };
-        program_headers.push(phdr);
-    }
+    //     let phdr: elf::ProgramHeader = unsafe { std::ptr::read(phdr_bytes.as_ptr() as *const _) };
+    //     program_headers.push(phdr);
+    // }
 
-    for i in 0..file.file_header.program_header_entry_count {
-        let phdr = &program_headers[i as usize];
-        println!("    > Read program header [{:?}]", phdr);
-        match known_offsets.get(&phdr.offset) {
-            Some(name) => println!("Segment name is KNOWN : [{}]", name),
-            None => (),
-        }
-    }
+    // for i in 0..file.file_header.program_header_entry_count {
+    //     let phdr = &program_headers[i as usize];
+    //     println!("    > Read program header [{:?}]", phdr);
+    //     match known_offsets.get(&phdr.offset) {
+    //         Some(name) => println!("Segment name is KNOWN : [{}]", name),
+    //         None => (),
+    //     }
+    // }
 
-    return file;
+    return result;
 }
