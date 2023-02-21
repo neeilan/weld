@@ -14,7 +14,7 @@ fn read_cstr(bytes: &Vec<u8>, table_offset: usize, str_offset: usize) -> &str {
     }
 }
 
-pub fn parse(path : &str, bytes: Vec<u8>) -> elf::high_level_repr::Relocatable {
+pub fn parse(path: &str, bytes: Vec<u8>) -> elf::high_level_repr::Relocatable {
     // println!("{}-byte ELF file", bytes.len());
 
     let mut result = elf::high_level_repr::Relocatable::default();
@@ -38,6 +38,7 @@ pub fn parse(path : &str, bytes: Vec<u8>) -> elf::high_level_repr::Relocatable {
         let shdr_bytes = &bytes[shdr_base..shdr_end];
 
         let shdr: elf::SectionHeader = unsafe { std::ptr::read(shdr_bytes.as_ptr() as *const _) };
+        // println!("{:?}", shdr);
         if matches!(shdr.section_type, elf::SectionType::RelocationWithAddend) {
             relocation_indices.push(i as usize)
         } else if matches!(shdr.section_type, elf::SectionType::SymbolTable) {
@@ -69,53 +70,78 @@ pub fn parse(path : &str, bytes: Vec<u8>) -> elf::high_level_repr::Relocatable {
 
         let mut section = elf::high_level_repr::Section::default();
         section.name = section_name.to_string();
-        section.bytes = bytes[(shdr.offset as usize)..((shdr.offset as usize) + (shdr.size as usize))].to_vec();
+        section.bytes =
+            bytes[(shdr.offset as usize)..((shdr.offset as usize) + (shdr.size as usize))].to_vec();
         section.offset = shdr.offset;
         section.virtual_address = shdr.virtual_address;
         result.sections.push(section);
     }
 
-    // println!("Symbol table : {:?}", section_headers[symtab_index]);
+    // println!("Symbol table : {:?}\n-----------------", section_headers[symtab_index]);
+    let num_symbols = ((section_headers[symtab_index].size as usize)
+        / std::mem::size_of::<elf::Symbol>()) as usize;
+    for i in 0..num_symbols {
+        let sym_bytes = &bytes[(section_headers[symtab_index].offset as usize)
+            + (std::mem::size_of::<elf::Symbol>() * i)..];
+        let symbol: elf::Symbol = unsafe { std::ptr::read(sym_bytes.as_ptr() as *const _) };
+        let symbol_info = elf::high_level_repr::SymbolInfo::from(
+            &symbol,
+            read_cstr(
+                &bytes,
+                section_headers[strtab_index].offset as usize,
+                symbol.name as usize,
+            ),
+        );
+        result.symbols.push(symbol_info);
+    }
 
-    // println!("Relocations");
+    println!("Relocations");
     for i in relocation_indices {
         // println!("{:?}", section_headers[i]);
 
-        let reloc_base: usize = (section_headers[i].offset as usize);
-        let reloc_end: usize = reloc_base + std::mem::size_of::<elf::RelocationWithAddend>();
-        let reloc_bytes = &bytes[reloc_base..reloc_end];
+        let num_relocs = (section_headers[i].size as usize
+            / std::mem::size_of::<elf::RelocationWithAddend>()) as usize;
 
-        let reloc: elf::RelocationWithAddend =
-            unsafe { std::ptr::read(reloc_bytes.as_ptr() as *const _) };
+        for r_i in 0..num_relocs {
+            let reloc_base: usize = (section_headers[i].offset as usize) + (r_i * std::mem::size_of::<elf::RelocationWithAddend>());
+            let reloc_end: usize = reloc_base + std::mem::size_of::<elf::RelocationWithAddend>();
+            let reloc_bytes = &bytes[reloc_base..reloc_end];
 
-        let t_bytes = &bytes[(section_headers[symtab_index].offset as usize)
-            + (std::mem::size_of::<elf::Symbol>() * reloc.symbol())..];
-        let symbol: elf::Symbol = unsafe { std::ptr::read(t_bytes.as_ptr() as *const _) };
-        result.relocations.push(elf::high_level_repr::X64Relocation::from(&reloc, read_cstr(
-            &bytes,
-            section_headers[strtab_index].offset as usize,
-            symbol.name as usize
-        ), ));
+            let reloc: elf::RelocationWithAddend =
+                unsafe { std::ptr::read(reloc_bytes.as_ptr() as *const _) };
 
-        // println!(
-        //     "    > Read relocation {:?} type={:?} [{:?}] - Symbol {:?}=[{:?}] symname=[{:?}]",
-        //     reloc,
-        //     reloc.relo_type(),
-        //     read_cstr(
-        //         &bytes,
-        //         section_name_string_table_offset,
-        //         section_headers[i].name as usize
-        //     ),
-        //     reloc.symbol(),
-        //     symbol,
-        //     read_cstr(
-        //         &bytes,
-        //         section_headers[strtab_index].offset as usize,
-        //         symbol.name as usize
-        //     ),
-        // )
+            let t_bytes = &bytes[(section_headers[symtab_index].offset as usize)
+                + (std::mem::size_of::<elf::Symbol>() * reloc.symbol())..];
+            let symbol: elf::Symbol = unsafe { std::ptr::read(t_bytes.as_ptr() as *const _) };
+            result
+                .relocations
+                .push(elf::high_level_repr::X64Relocation::from(
+                    &reloc,
+                    read_cstr(
+                        &bytes,
+                        section_headers[strtab_index].offset as usize,
+                        symbol.name as usize,
+                    ),
+                ));
 
-
+            // println!(
+            //     "    > Read relocation {:?} type={:?} [{:?}] - Symbol {:?}=[{:?}] symname=[{:?}]",
+            //     reloc,
+            //     reloc.relo_type(),
+            //     read_cstr(
+            //         &bytes,
+            //         section_name_string_table_offset,
+            //         section_headers[i].name as usize
+            //     ),
+            //     reloc.symbol(),
+            //     symbol,
+            //     read_cstr(
+            //         &bytes,
+            //         section_headers[strtab_index].offset as usize,
+            //         symbol.name as usize
+            //     ),
+            // )
+        }
     }
 
     // Program headers

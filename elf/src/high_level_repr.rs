@@ -1,4 +1,4 @@
-use super::RelocationWithAddend;
+use super::{RelocationWithAddend, Symbol};
 use iced_x86::{Decoder, DecoderOptions, Formatter, GasFormatter, Instruction};
 use std::fmt;
 
@@ -57,6 +57,7 @@ pub struct Relocatable {
     pub path: String,
     pub sections: Vec<Section>,
     pub relocations: Vec<X64Relocation>,
+    pub symbols : Vec<SymbolInfo>
 }
 
 impl Relocatable {
@@ -65,11 +66,11 @@ impl Relocatable {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct X64Relocation {
-    offset: usize, // Location where relocation should be applied
+    pub offset: usize, // Location where relocation should be applied
     pub info: u64,
-    addend: i64,
+    pub addend: i64,
     pub symbol_name: String,
 }
 
@@ -103,6 +104,25 @@ impl fmt::Debug for X64Relocation {
     }
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct SymbolInfo {
+    pub name : String,
+    pub symbol : Symbol
+}
+
+impl SymbolInfo {
+    pub fn from(s: &Symbol, name : &str) -> SymbolInfo {
+        SymbolInfo {
+            name: name.to_string(),
+            symbol: s.clone()
+        }
+    }
+
+    pub fn is_defined(&self) -> bool {
+        self.symbol.relative_to_section != 0
+    }
+}
+
 #[derive(Default, Debug)]
 #[repr(u64)]
 pub enum X64ReloType {
@@ -114,7 +134,7 @@ pub enum X64ReloType {
 
 #[derive(Debug, Default)]
 pub struct Executable {
-    entry_point: u64,
+    pub entry_point: u64,
     sections: Vec<Section>,
     pub bytes: Vec<u8>,
 }

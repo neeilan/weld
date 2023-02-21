@@ -117,15 +117,16 @@ impl RelocationWithAddend {
     }
 }
 
-#[derive(Debug, Default)]
+// https://docs.oracle.com/cd/E23824_01/html/819-0690/chapter6-79797.html#chapter6-35166
+#[derive(Debug, Default, Clone)]
 #[repr(C)]
 pub struct Symbol {
     pub name : Word,
-    info : u8,
-    other : u8,
-    relative_to_section : Half,
-    value : Address,
-    size : XWord,
+    pub info : u8,
+    pub other : u8,
+    pub relative_to_section : Half, // If SHN_UNDEF, means undefined
+    pub value : Address,            // can be an absolute value or an address
+    pub size : XWord,
 }
 
 const _ASSERT_SECTION_HDR_SIZE: [u8; 64] = [0; std::mem::size_of::<SectionHeader>()];
