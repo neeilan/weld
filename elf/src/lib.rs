@@ -22,18 +22,18 @@ pub struct File {
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct FileHeader {
-    identification: Identification,
-    object_file_type: Half,
-    machine_type: Half,
-    object_file_version: Word,
-    entrypoint: Address,
+    pub identification: Identification,
+    pub object_file_type: Half,
+    pub machine_type: Half,
+    pub object_file_version: Word,
+    pub entrypoint: Address,
     pub program_header_offset: FileOffset,
     pub section_header_offset: FileOffset,
-    processor_specific_flags: Word,
-    file_header_size: Half,
-    program_headers_total_size: Half,
+    pub processor_specific_flags: Word,
+    pub file_header_size: Half,
+    pub program_headers_total_size: Half,
     pub program_header_entry_count: Half,
-    section_headers_total_size: Half,
+    pub section_headers_total_size: Half,
     pub section_header_entry_count: Half,
     pub sh_section_name_stringtab_entry_index: Half,
 }
@@ -41,11 +41,11 @@ pub struct FileHeader {
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct Identification {
-    magic: [u8; 4],
-    format_class: u8,
-    endianness: u8,
-    format_version: u8,
-    abi_version: u8,
+    pub magic: [u8; 4],
+    pub format_class: u8,
+    pub endianness: u8,
+    pub format_version: u8,
+    pub os_abi: u8,
     pad: [u8; 8],
 }
 
@@ -141,9 +141,9 @@ pub struct ProgramHeader {
     pub offset: FileOffset,
     pub virtual_address: Address,
     pub physical_address: Address,
-    size_in_file: XWord,
-    size_in_memory: XWord,
-    required_alignment : Address
+    pub size_in_file: XWord,
+    pub size_in_memory: XWord,
+    pub required_alignment : Address
 }
 
 
