@@ -163,17 +163,17 @@ pub fn build_header(executable : &elf::high_level_repr::Executable) -> Result<el
     hdr.machine_type = 0x3e; // AMD x86-64
     hdr.object_file_version = 1; // original ELF
     hdr.entrypoint= executable.entry_point + 0x401000; // e_entry - memory address where process starts executing
-    hdr.program_header_offset = 64; // Immediately following ELF header
-    hdr.section_header_offset = (64 + 2*56 + executable.alignnent_padding + executable.bytes.len() + executable.shstrtab.len()) as u64;
     hdr.processor_specific_flags = 0x00000102;
     hdr.file_header_size = std::mem::size_of::<elf::FileHeader>() as u16;
 
+    hdr.program_header_offset = 64; // Immediately following ELF header
     hdr.program_headers_total_size = std::mem::size_of::<elf::ProgramHeader>() as u16;
     hdr.program_header_entry_count = 2;
 
-    hdr.section_headers_total_size = std::mem::size_of::<elf::SectionHeader>() as u16;
-    hdr.section_header_entry_count = 3;
-    hdr.sh_section_name_stringtab_entry_index = 2;
+    // hdr.section_header_offset = (64 + 2*56 + executable.alignnent_padding + executable.bytes.len() + executable.shstrtab.len()) as u64;
+    // hdr.section_headers_total_size = std::mem::size_of::<elf::SectionHeader>() as u16;
+    // hdr.section_header_entry_count = 3;
+    // hdr.sh_section_name_stringtab_entry_index = 2;
 
     Ok(hdr)
 }
@@ -182,11 +182,11 @@ pub fn build_pht(executable : &elf::high_level_repr::Executable) -> Vec<elf::Pro
     let mut phdr0 = elf::ProgramHeader::default();
     phdr0.segment_type = elf::SegmentType::Loadable;
     phdr0.offset = 0; // Read the goddamn elf header and PHT
-    phdr0.virtual_address = 0; // Let's try this
+    phdr0.virtual_address = 0x400000; // Let's try this
     phdr0.physical_address = 0;
     phdr0.size_in_file = 64 + 56 * 2;
     phdr0.size_in_memory =  64 + 56 * 2;
-    phdr0.required_alignment = 0; // Let's try this 4K
+    phdr0.required_alignment = 0x1000; // Let's try this 4K
     phdr0.flags =0x1 | 0x2 | 0x4;
 
     let mut phdr = elf::ProgramHeader::default();
