@@ -28,7 +28,7 @@
 
         symbols {
             .name =
-        }
+        }DSG
 
         relocations {
 
@@ -42,7 +42,6 @@
 use std::{collections::HashMap, io::Write};
 use iced_x86::{Decoder, DecoderOptions, Formatter, GasFormatter, Instruction};
 
-
 extern crate elf;
 
 #[derive(Debug, Default)]
@@ -55,6 +54,7 @@ unsafe fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 
 pub fn link(inputs : &Vec<elf::high_level_repr::Relocatable>) -> Result<elf::high_level_repr::Executable, Vec<WeldError>> {
     let mut res = elf::high_level_repr::Executable::default();
+
 
     let mut start_of_section = HashMap::<String, usize>::new();
     let mut symbols = HashMap::<String, usize>::new();
@@ -98,6 +98,7 @@ pub fn link(inputs : &Vec<elf::high_level_repr::Relocatable>) -> Result<elf::hig
     }
 
     res.entry_point = symbols.get("_start").expect("Entrypoint symbol _start not found").clone() as u64;
+    res.shstrtab = vec![0, 0x2e, 0x74, 0x65, 0x78, 0x74, 0, 0x2e, 0x73, 0x68, 0x73, 0x74, 0x72, 0x74, 0x61, 0x62];;
 
 
     let mut decoder = Decoder::with_ip(64, &res.bytes, 0, DecoderOptions::NONE);
@@ -111,6 +112,12 @@ pub fn link(inputs : &Vec<elf::high_level_repr::Relocatable>) -> Result<elf::hig
         println!("{:4X}  {}", instruction.ip(), output)
     }
 
+    // Align the text section with the page size
+    // >  Loadable process segments must have congruent values for p_vaddr and p_offset, modulo the page size.
+    // WTF does this mean? https://refspecs.linuxfoundation.org/ELF/zSeries/lzsabi0_s390/c2090.html
+    let page_size : usize = 4096;
+    res.alignnent_padding = page_size - 64 - 56 - 56;
+
     // Build the rest of the file
     let hdr = build_header(&res).unwrap();
     let pht = build_pht(&res);
@@ -123,8 +130,22 @@ pub fn link(inputs : &Vec<elf::high_level_repr::Relocatable>) -> Result<elf::hig
         .open("./weld.out").unwrap();
 
     unsafe {   file.write_all(as_u8_slice(&hdr)); }
-    unsafe {   file.write_all(as_u8_slice(&pht)); }
+    for phdr in pht {
+        unsafe { file.write_all(as_u8_slice(&phdr)); }
+    }    
+    let pad: Vec<u8> = vec![0; res.alignnent_padding];
+    file.write_all(&pad);
+
     file.write_all(&res.bytes);
+
+    // Write a null byte for the section header names strtab
+    file.write_all(&res.shstrtab);
+
+    let shdrs = build_sht(&res);
+
+    for shdr in shdrs {
+        unsafe { file.write_all(as_u8_slice(&shdr)); }
+    }
 
 
     Ok(res)
@@ -141,32 +162,75 @@ pub fn build_header(executable : &elf::high_level_repr::Executable) -> Result<el
     hdr.object_file_type = 0x02; // ET_EXEC
     hdr.machine_type = 0x3e; // AMD x86-64
     hdr.object_file_version = 1; // original ELF
-    hdr.entrypoint= executable.entry_point + 0x400000; // e_entry - memory address where process starts executing
-    hdr.program_header_offset = 0x40; // Immediately following ELF header
-    hdr.section_header_offset = 0; // Not needed in executable
-    hdr.processor_specific_flags = 0;
+    hdr.entrypoint= executable.entry_point + 0x401000; // e_entry - memory address where process starts executing
+    hdr.program_header_offset = 64; // Immediately following ELF header
+    hdr.section_header_offset = (64 + 2*56 + executable.alignnent_padding + executable.bytes.len() + executable.shstrtab.len()) as u64;
+    hdr.processor_specific_flags = 0x00000102;
     hdr.file_header_size = std::mem::size_of::<elf::FileHeader>() as u16;
 
-    // For now, only one pht entry
     hdr.program_headers_total_size = std::mem::size_of::<elf::ProgramHeader>() as u16;
-    hdr.program_header_entry_count = 1;
+    hdr.program_header_entry_count = 2;
 
-    hdr.section_headers_total_size = 0;
-    hdr.section_header_entry_count = 0;
-    hdr.sh_section_name_stringtab_entry_index = 0;
+    hdr.section_headers_total_size = std::mem::size_of::<elf::SectionHeader>() as u16;
+    hdr.section_header_entry_count = 3;
+    hdr.sh_section_name_stringtab_entry_index = 2;
 
     Ok(hdr)
 }
 
-pub fn build_pht(executable : &elf::high_level_repr::Executable) -> elf::ProgramHeader {
+pub fn build_pht(executable : &elf::high_level_repr::Executable) -> Vec<elf::ProgramHeader> {
+    let mut phdr0 = elf::ProgramHeader::default();
+    phdr0.segment_type = elf::SegmentType::Loadable;
+    phdr0.offset = 0; // Read the goddamn elf header and PHT
+    phdr0.virtual_address = 0; // Let's try this
+    phdr0.physical_address = 0;
+    phdr0.size_in_file = 64 + 56 * 2;
+    phdr0.size_in_memory =  64 + 56 * 2;
+    phdr0.required_alignment = 0; // Let's try this 4K
+    phdr0.flags =0x1 | 0x2 | 0x4;
+
     let mut phdr = elf::ProgramHeader::default();
     phdr.segment_type = elf::SegmentType::Loadable;
-    phdr.offset = (std::mem::size_of::<elf::FileHeader>() + std::mem::size_of::<elf::ProgramHeader>()) as u64;
-    phdr.virtual_address = 0x400000; // Let's try this
-    phdr.physical_address = 0x400000;
+    phdr.offset = (64 + 2 * 56 + executable.alignnent_padding) as u64;
+    phdr.virtual_address = 0x401000; // Let's try this
+    phdr.physical_address = 0x401000;
     phdr.size_in_file = executable.bytes.len() as u64;
     phdr.size_in_memory = executable.bytes.len() as u64;
-    phdr.required_alignment = 2 << 11; // Let's try this 4K
-    phdr.flags = 0x4 | 0x1; // Read and Execute
-    phdr
+    phdr.required_alignment = 0x1000; // Let's try this 4K
+    phdr.flags = 0x1 | 0x2 | 0x4;
+
+    vec![phdr0, phdr]
+
+}
+
+pub fn build_sht(executable : &elf::high_level_repr::Executable) -> Vec<elf::SectionHeader> {
+    let sh_text = elf::SectionHeader {
+        name: 1,
+        section_type : elf::SectionType::ProgramData,
+        flags :  0x1 | 0x2 | 0x4,
+        virtual_address: 0x401000,
+        offset : (64 + 2 * 56 + executable.alignnent_padding) as u64,
+        size : executable.bytes.len() as u64,
+        link_to_other_section : 0,
+        misc_info : 0,
+        address_allignment_boundary : 1,
+        entries_total_size : 0
+    };
+
+    let sh_shstrtab = elf::SectionHeader {
+        name: 7,
+        section_type : elf::SectionType::StringTable,
+        flags :  0x1 | 0x2 | 0x4,
+        virtual_address: 0,
+        offset : sh_text.offset + sh_text.size,
+        size : executable.shstrtab.len() as u64,
+        link_to_other_section : 0,
+        misc_info : 0,
+        address_allignment_boundary : 1,
+        entries_total_size : 0
+    };
+
+    let mut sh0 = elf::SectionHeader::default();
+    sh0.flags = 0x1 | 0x2 | 0x4;
+    vec![sh0, sh_text, sh_shstrtab]
 }

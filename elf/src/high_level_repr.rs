@@ -137,4 +137,14 @@ pub struct Executable {
     pub entry_point: u64,
     sections: Vec<Section>,
     pub bytes: Vec<u8>,
+    pub alignnent_padding : usize,
+    pub shstrtab : Vec<u8>,
+    pub num_program_headers : usize
+}
+
+
+impl Executable {
+    pub fn size_in_file(&self) -> usize {
+        64 + (56*self.num_program_headers) + self.bytes.len() + self.alignnent_padding + self.shstrtab.len()
+    }
 }

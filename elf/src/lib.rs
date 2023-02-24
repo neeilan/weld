@@ -67,11 +67,11 @@ pub struct SectionHeader {
     pub size: XWord,
     // Semantics of value depend on `section_type`
     pub link_to_other_section: Word,
-    misc_info: Word,
+    pub misc_info: Word,
     // Must be a power of 2
-    address_allignment_boundary: XWord,
+    pub address_allignment_boundary: XWord,
     // Only applicable for fixed-size entries
-    entries_total_size: XWord,
+    pub entries_total_size: XWord,
 }
 
 #[derive(Debug, Default)]
