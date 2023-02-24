@@ -170,10 +170,10 @@ pub fn build_header(executable : &elf::high_level_repr::Executable) -> Result<el
     hdr.program_headers_total_size = std::mem::size_of::<elf::ProgramHeader>() as u16;
     hdr.program_header_entry_count = 2;
 
-    // hdr.section_header_offset = (64 + 2*56 + executable.alignnent_padding + executable.bytes.len() + executable.shstrtab.len()) as u64;
-    // hdr.section_headers_total_size = std::mem::size_of::<elf::SectionHeader>() as u16;
-    // hdr.section_header_entry_count = 3;
-    // hdr.sh_section_name_stringtab_entry_index = 2;
+    hdr.section_header_offset = (64 + 2*56 + executable.alignnent_padding + executable.bytes.len() + executable.shstrtab.len()) as u64;
+    hdr.section_headers_total_size = std::mem::size_of::<elf::SectionHeader>() as u16;
+    hdr.section_header_entry_count = 3;
+    hdr.sh_section_name_stringtab_entry_index = 2;
 
     Ok(hdr)
 }
