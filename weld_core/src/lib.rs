@@ -83,9 +83,9 @@ pub fn link(inputs : &Vec<elf::high_level_repr::Relocatable>) -> Result<elf::hig
     for f in inputs {
         for r in f.relocations.clone() {
             if matches!(r.relo_type(), elf::high_level_repr::X64ReloType::R_AMD64_PLT32) {
-                let symbol_addr = symbols.get(&r.symbol_name).expect("Couldn't find symbol").clone();
+                let symbol_addr = symbols.get(&r.symbol.name).expect("Couldn't find symbol").clone();
                 let base_addr = start_of_section.get(&f.path).expect("Unknown start of section in exectuable");
-                println!("Relocating symbol {:?}, defined_at:{:?} insert_at.base:{:?} insert_at.offset:{:?}", r.symbol_name, symbol_addr, base_addr, r.offset);
+                println!("Relocating symbol {:?}, defined_at:{:?} insert_at.base:{:?} insert_at.offset:{:?}", r.symbol.name, symbol_addr, base_addr, r.offset);
                 let new_addr = ((symbol_addr as isize) - ((r.offset + base_addr) as isize) + (r.addend as isize)) as i32;
                 res.bytes[base_addr + r.offset] = (new_addr & 0xff) as u8;                  
                 res.bytes[base_addr + r.offset+1] = (new_addr >> 8  & 0xff) as u8;                     

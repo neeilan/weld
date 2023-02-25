@@ -10,14 +10,8 @@ pub type Address = u64;
 type FileOffset = u64;
 type Half = u16;
 type Word = u32;
-type SignedWord = i32;
 type XWord = u64;
 type SignedXWord = i64;
-
-#[derive(Debug, Default)]
-pub struct File {
-    pub file_header: FileHeader,
-}
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -54,7 +48,7 @@ pub struct Identification {
 const _ASSERT_ELF_HDR_SIZE: [u8; 64] = [0; std::mem::size_of::<FileHeader>()];
 
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 #[repr(C)]
 pub struct SectionHeader {
     // Offset, in bytes, to the section name, relative to the start of the
@@ -74,7 +68,7 @@ pub struct SectionHeader {
     pub entries_total_size: XWord,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 #[repr(u32)]
 pub enum SectionType {
     #[default]

@@ -1,75 +1,23 @@
-use std::collections::HashMap;
-use std::ffi::CStr;
 use std::vec::Vec;
 
-// Usage weld <library file> <entrypoint (main) file>
-
-fn read_cstr(bytes: &Vec<u8>, table_offset: usize, str_offset: usize) -> &str {
-    let str_ref = &bytes[table_offset + str_offset..];
-
-    unsafe {
-        return CStr::from_ptr(str_ref.as_ptr() as *const _)
-            .to_str()
-            .unwrap();
-    }
-}
+use elf::high_level_repr::{SymbolInfo, X64Relocation};
 
 pub fn parse(path: &str, bytes: Vec<u8>) -> elf::high_level_repr::Relocatable {
-    // println!("{}-byte ELF file", bytes.len());
+    let header = parse_header(&bytes);
+    let section_headers = parse_section_headers(&bytes, &header);
+    let section_names = parse_section_name_string_table(&bytes, &section_headers, &header);
+    let symbols = parse_symbol_table(&bytes, &section_headers, &header);
+    let relocations = parse_relocations(&bytes, &section_headers, &symbols);
 
     let mut result = elf::high_level_repr::Relocatable::default();
     result.path = path.to_string();
+    result.symbols.extend_from_slice(&symbols);
+    result.relocations.extend(relocations);
 
-    let mut file = elf::File::default();
-
-    let file_hdr_size = std::mem::size_of::<elf::FileHeader>();
-    let hdr_bytes = &bytes[..file_hdr_size];
-    file.file_header = unsafe { std::ptr::read(hdr_bytes.as_ptr() as *const _) };
-
-    // Parse the section header table
-    let mut section_headers = Vec::new();
-    let mut relocation_indices: Vec<usize> = Vec::new();
-    let mut symtab_index: usize = 0;
-    let mut strtab_index: usize = 0;
-    for i in 0..file.file_header.section_header_entry_count {
-        let shdr_base: usize = (file.file_header.section_header_offset as usize)
-            + (i as usize) * std::mem::size_of::<elf::SectionHeader>();
-        let shdr_end: usize = shdr_base + std::mem::size_of::<elf::SectionHeader>();
-        let shdr_bytes = &bytes[shdr_base..shdr_end];
-
-        let shdr: elf::SectionHeader = unsafe { std::ptr::read(shdr_bytes.as_ptr() as *const _) };
-        // println!("{:?}", shdr);
-        if matches!(shdr.section_type, elf::SectionType::RelocationWithAddend) {
-            relocation_indices.push(i as usize)
-        } else if matches!(shdr.section_type, elf::SectionType::SymbolTable) {
-            symtab_index = i as usize;
-        } else if matches!(shdr.section_type, elf::SectionType::StringTable) {
-            if strtab_index == 0 {
-                // HACK: How do we check that this is the program symbol table (not section one)?
-                strtab_index = i as usize;
-            }
-        }
-        section_headers.push(shdr);
-    }
-
-    let section_name_string_table_offset = section_headers
-        [file.file_header.sh_section_name_stringtab_entry_index as usize]
-        .offset as usize;
-
-    let mut known_offsets = HashMap::new();
-    for i in 0..file.file_header.section_header_entry_count {
-        let shdr = &section_headers[i as usize];
-        let section_name = read_cstr(&bytes, section_name_string_table_offset, shdr.name as usize);
-        // println!(
-        //     "    > Read section header [{:?}] : {:?} {:?}",
-        //     shdr.section_type, section_name, shdr
-        // );
-        if shdr.offset > 0 {
-            known_offsets.insert(shdr.offset, section_name);
-        }
-
+    for shdr in section_headers {
         let mut section = elf::high_level_repr::Section::default();
-        section.name = section_name.to_string();
+
+        section.name = section_names.at(shdr.name as usize).unwrap().clone();
         section.bytes =
             bytes[(shdr.offset as usize)..((shdr.offset as usize) + (shdr.size as usize))].to_vec();
         section.offset = shdr.offset;
@@ -77,98 +25,138 @@ pub fn parse(path: &str, bytes: Vec<u8>) -> elf::high_level_repr::Relocatable {
         result.sections.push(section);
     }
 
-    // println!("Symbol table : {:?}\n-----------------", section_headers[symtab_index]);
-    let num_symbols = ((section_headers[symtab_index].size as usize)
-        / std::mem::size_of::<elf::Symbol>()) as usize;
-    for i in 0..num_symbols {
-        let sym_bytes = &bytes[(section_headers[symtab_index].offset as usize)
-            + (std::mem::size_of::<elf::Symbol>() * i)..];
-        let symbol: elf::Symbol = unsafe { std::ptr::read(sym_bytes.as_ptr() as *const _) };
-        let symbol_info = elf::high_level_repr::SymbolInfo::from(
-            &symbol,
-            read_cstr(
-                &bytes,
-                section_headers[strtab_index].offset as usize,
-                symbol.name as usize,
-            ),
-        );
-        result.symbols.push(symbol_info);
+    result
+}
+
+fn parse_header(bytes: &Vec<u8>) -> elf::FileHeader {
+    let hdr_bytes = &bytes[..std::mem::size_of::<elf::FileHeader>()];
+    let header: elf::FileHeader = unsafe { std::ptr::read(hdr_bytes.as_ptr() as *const _) };
+    return header;
+}
+
+fn parse_section_headers(
+    bytes: &Vec<u8>,
+    file_header: &elf::FileHeader,
+) -> Vec<elf::SectionHeader> {
+    let mut section_headers = Vec::new();
+
+    for i in 0..file_header.section_header_entry_count {
+        let base: usize = (file_header.section_header_offset as usize)
+            + (i as usize) * std::mem::size_of::<elf::SectionHeader>();
+        let shdr: elf::SectionHeader =
+            unsafe { std::ptr::read(bytes[base..].as_ptr() as *const _) };
+        section_headers.push(shdr);
     }
+    section_headers
+}
 
-    println!("Relocations");
-    for i in relocation_indices {
-        // println!("{:?}", section_headers[i]);
+struct StringTableWrapper {
+    bytes: Vec<u8>,
+}
 
-        let num_relocs = (section_headers[i].size as usize
-            / std::mem::size_of::<elf::RelocationWithAddend>()) as usize;
-
-        for r_i in 0..num_relocs {
-            let reloc_base: usize = (section_headers[i].offset as usize) + (r_i * std::mem::size_of::<elf::RelocationWithAddend>());
-            let reloc_end: usize = reloc_base + std::mem::size_of::<elf::RelocationWithAddend>();
-            let reloc_bytes = &bytes[reloc_base..reloc_end];
-
-            let reloc: elf::RelocationWithAddend =
-                unsafe { std::ptr::read(reloc_bytes.as_ptr() as *const _) };
-
-            let t_bytes = &bytes[(section_headers[symtab_index].offset as usize)
-                + (std::mem::size_of::<elf::Symbol>() * reloc.symbol())..];
-            let symbol: elf::Symbol = unsafe { std::ptr::read(t_bytes.as_ptr() as *const _) };
-            result
-                .relocations
-                .push(elf::high_level_repr::X64Relocation::from(
-                    &reloc,
-                    read_cstr(
-                        &bytes,
-                        section_headers[strtab_index].offset as usize,
-                        symbol.name as usize,
-                    ),
-                ));
-
-            // println!(
-            //     "    > Read relocation {:?} type={:?} [{:?}] - Symbol {:?}=[{:?}] symname=[{:?}]",
-            //     reloc,
-            //     reloc.relo_type(),
-            //     read_cstr(
-            //         &bytes,
-            //         section_name_string_table_offset,
-            //         section_headers[i].name as usize
-            //     ),
-            //     reloc.symbol(),
-            //     symbol,
-            //     read_cstr(
-            //         &bytes,
-            //         section_headers[strtab_index].offset as usize,
-            //         symbol.name as usize
-            //     ),
-            // )
+impl StringTableWrapper {
+    fn new(bytes: &[u8]) -> Self {
+        Self {
+            bytes: bytes.to_vec(),
         }
     }
 
-    // Program headers
-    // println!(
-    //     "{} program headers in this file",
-    //     file.file_header.program_header_entry_count
-    // );
+    fn at(&self, i: usize) -> Option<String> {
+        let mut buffer = String::new();
+        for j in i..self.bytes.len() {
+            let c = self.bytes[j as usize];
+            if c == 0 {
+                return Some(buffer.clone());
+            }
+            buffer.push(c as char);
+        }
+        None
+    }
+}
 
-    // let mut program_headers = Vec::new();
-    // for i in 0..file.file_header.program_header_entry_count {
-    //     let phdr_base: usize = (file.file_header.program_header_offset as usize)
-    //         + (i as usize) * std::mem::size_of::<elf::ProgramHeader>();
-    //     let phdr_end: usize = phdr_base + std::mem::size_of::<elf::ProgramHeader>();
-    //     let phdr_bytes = &bytes[phdr_base..phdr_end];
+fn parse_symbol_string_table(
+    bytes: &Vec<u8>,
+    section_headers: &Vec<elf::SectionHeader>,
+    file_header: &elf::FileHeader,
+) -> StringTableWrapper {
+    let shstrtab_header =
+        &section_headers[file_header.sh_section_name_stringtab_entry_index as usize];
 
-    //     let phdr: elf::ProgramHeader = unsafe { std::ptr::read(phdr_bytes.as_ptr() as *const _) };
-    //     program_headers.push(phdr);
-    // }
+    let header = section_headers
+        .iter()
+        .find(|&hdr| {
+            matches!(hdr.section_type, elf::SectionType::StringTable) && hdr != shstrtab_header
+        })
+        .unwrap();
 
-    // for i in 0..file.file_header.program_header_entry_count {
-    //     let phdr = &program_headers[i as usize];
-    //     println!("    > Read program header [{:?}]", phdr);
-    //     match known_offsets.get(&phdr.offset) {
-    //         Some(name) => println!("Segment name is KNOWN : [{}]", name),
-    //         None => (),
-    //     }
-    // }
+    parse_string_table(&bytes, &header)
+}
 
-    return result;
+fn parse_string_table(bytes: &Vec<u8>, header: &elf::SectionHeader) -> StringTableWrapper {
+    StringTableWrapper::new(
+        &bytes[(header.offset as usize)..((header.offset + header.size) as usize)],
+    )
+}
+
+fn parse_section_name_string_table(
+    bytes: &Vec<u8>,
+    section_headers: &Vec<elf::SectionHeader>,
+    file_header: &elf::FileHeader,
+) -> StringTableWrapper {
+    let section_header =
+        &section_headers[file_header.sh_section_name_stringtab_entry_index as usize];
+    parse_string_table(&bytes, &section_header)
+}
+
+fn parse_symbol_table(
+    bytes: &Vec<u8>,
+    section_headers: &Vec<elf::SectionHeader>,
+    file_header: &elf::FileHeader,
+) -> Vec<SymbolInfo> {
+    let header = section_headers
+        .iter()
+        .find(|&hdr| matches!(hdr.section_type, elf::SectionType::SymbolTable))
+        .unwrap();
+
+    let num_symbols = (header.size as usize) / std::mem::size_of::<elf::Symbol>();
+    let symbol_names = parse_symbol_string_table(&bytes, &section_headers, &file_header);
+    let mut symbols = Vec::new();
+
+    for i in 0..num_symbols {
+        let sym_bytes = &bytes[(header.offset as usize) + i * std::mem::size_of::<elf::Symbol>()..];
+        let symbol: elf::Symbol = unsafe { std::ptr::read(sym_bytes.as_ptr() as *const _) };
+        let symbol_info = SymbolInfo {
+            name: symbol_names.at(symbol.name as usize).unwrap().clone(),
+            symbol: symbol,
+        };
+        symbols.push(symbol_info.clone());
+    }
+    symbols
+}
+
+fn parse_relocations(
+    bytes: &Vec<u8>,
+    section_headers: &Vec<elf::SectionHeader>,
+    symbol_table: &Vec<SymbolInfo>,
+) -> Vec<X64Relocation> {
+    let mut relocations = Vec::new();
+
+    let header_or = section_headers
+        .iter()
+        .find(|&hdr| matches!(hdr.section_type, elf::SectionType::RelocationWithAddend));
+
+    if header_or.is_none() {
+        return relocations;
+    }
+
+    let header = header_or.unwrap();
+    let num_relocs = header.size as usize / std::mem::size_of::<elf::RelocationWithAddend>();
+    for i in 0..num_relocs {
+        let base = (header.offset as usize) + i * std::mem::size_of::<elf::RelocationWithAddend>();
+        let r: elf::RelocationWithAddend =
+            unsafe { std::ptr::read(bytes[base..].as_ptr() as *const _) };
+        relocations.push(X64Relocation::from(&r, &symbol_table[r.symbol()]));
+    }
+
+    relocations
 }

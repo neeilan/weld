@@ -1,4 +1,4 @@
-use super::{RelocationWithAddend, Symbol};
+use super::{RelocationWithAddend, Symbol, SectionHeader};
 use iced_x86::{Decoder, DecoderOptions, Formatter, GasFormatter, Instruction};
 use std::fmt;
 
@@ -71,16 +71,16 @@ pub struct X64Relocation {
     pub offset: usize, // Location where relocation should be applied
     pub info: u64,
     pub addend: i64,
-    pub symbol_name: String,
+    pub symbol: SymbolInfo,
 }
 
 impl X64Relocation {
-    pub fn from(r: &RelocationWithAddend, symbol_name: &str) -> X64Relocation {
+    pub fn from(r: &RelocationWithAddend, symbol: &SymbolInfo) -> X64Relocation {
         X64Relocation {
             offset: r.offset as usize,
             info: r.info,
             addend: r.addend,
-            symbol_name: symbol_name.to_string(),
+            symbol: symbol.clone()
         }
     }
     // Processor-specific: https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter7-2/index.html
@@ -96,7 +96,7 @@ impl fmt::Debug for X64Relocation {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.write_fmt(format_args!(
             "X64Reloc < symbol=[{}] offset={:#x} addend={} type={:?} >",
-            self.symbol_name,
+            self.symbol.name,
             self.offset,
             self.addend,
             self.relo_type()
@@ -135,7 +135,6 @@ pub enum X64ReloType {
 #[derive(Debug, Default)]
 pub struct Executable {
     pub entry_point: u64,
-    sections: Vec<Section>,
     pub bytes: Vec<u8>,
     pub alignnent_padding : usize,
     pub shstrtab : Vec<u8>,
