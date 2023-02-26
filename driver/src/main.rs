@@ -1,9 +1,9 @@
 use std::env;
 use std::fs;
+use std::io::Write;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    // Parse the file
 
     let mut relocatables = Vec::new();
     for i in 1..args.len() {
@@ -23,15 +23,20 @@ fn main() {
         };
     }
 
-    let executable = weld_core::link(&relocatables);
-    match executable {
-        Ok(exec) =>  {println!("{:?}", exec)}
-        Err(errs) => {println!("{:?}", errs)}
+    let exec_or = weld_core::link(&relocatables);
+    match exec_or {
+        Ok(exec) => {
+            let mut file = std::fs::OpenOptions::new()
+                .create(true) // To create a new file
+                .write(true)
+                // either use the ? operator or unwrap since it returns a Result
+                .open("./weld.out")
+                .unwrap();
+            file.write_all(&exec.encode())
+                .expect("Write to file failed");
+        }
+        Err(errs) => {
+            println!("{:?}", errs)
+        }
     }
-
-    // Link inputs into executable
-
-    // Build header for the executable
-
-    // Write header and executable to disk
 }

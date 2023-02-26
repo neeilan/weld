@@ -1,8 +1,16 @@
-use super::{RelocationWithAddend, Symbol, SectionHeader};
+use crate::string_table;
+
+// This module defines high-level 'logical' representations of ELF
+// structures. While the on-disk layout (defined in elf::file) is
+/// effective, manipulating fixed-size structures is often restrictive.
+//
+// Therefore, these data structures, rather than the `file::` structs,
+// are used in the public API for the weld library. For example, in
+// the simplest terms, the weld library takes a collection of `Relocatable`s
+// and returns a single `Executable`.
+use super::file;
 use iced_x86::{Decoder, DecoderOptions, Formatter, GasFormatter, Instruction};
 use std::fmt;
-
-// The goal of weld_core is to take one or more Relocatable and generate an Executable
 
 #[derive(Default)]
 pub struct Section {
@@ -15,13 +23,6 @@ pub struct Section {
 impl fmt::Debug for Section {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         if self.name != ".text" {
-            // return fmt.write_fmt(format_args!(
-            //     " -- <Section [{}] size={} file_offset={} virtual_address={:X}> -- ",
-            //     self.name,
-            //     self.bytes.len(),
-            //     self.offset,
-            //     self.virtual_address
-            // ))
             return fmt.write_fmt(format_args!(""));
         }
 
@@ -56,8 +57,8 @@ impl fmt::Debug for Section {
 pub struct Relocatable {
     pub path: String,
     pub sections: Vec<Section>,
-    pub relocations: Vec<X64Relocation>,
-    pub symbols : Vec<SymbolInfo>
+    pub relocations: Vec<Relocation>,
+    pub symbols: Vec<SymbolInfo>,
 }
 
 impl Relocatable {
@@ -66,33 +67,42 @@ impl Relocatable {
     }
 }
 
+#[derive(Default, Debug)]
+#[repr(u64)]
+pub enum RelocationType {
+    #[default]
+    None = 0,
+    PLT32 = 4,
+    Unknown = 0xffffffff,
+}
+
 #[derive(Default, Clone)]
-pub struct X64Relocation {
+pub struct Relocation {
     pub offset: usize, // Location where relocation should be applied
     pub info: u64,
     pub addend: i64,
     pub symbol: SymbolInfo,
 }
 
-impl X64Relocation {
-    pub fn from(r: &RelocationWithAddend, symbol: &SymbolInfo) -> X64Relocation {
-        X64Relocation {
+impl Relocation {
+    pub fn from(r: &file::RelocationWithAddend, symbol: &SymbolInfo) -> Relocation {
+        Relocation {
             offset: r.offset as usize,
             info: r.info,
             addend: r.addend,
-            symbol: symbol.clone()
+            symbol: symbol.clone(),
         }
     }
     // Processor-specific: https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter7-2/index.html
-    pub fn relo_type(&self) -> X64ReloType {
+    pub fn relo_type(&self) -> RelocationType {
         match self.info & 0xffffffff {
-            4 => X64ReloType::R_AMD64_PLT32,
-            _ => X64ReloType::R_UNKNOWN
+            4 => RelocationType::PLT32,
+            _ => RelocationType::Unknown,
         }
     }
 }
 
-impl fmt::Debug for X64Relocation {
+impl fmt::Debug for Relocation {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.write_fmt(format_args!(
             "X64Reloc < symbol=[{}] offset={:#x} addend={} type={:?} >",
@@ -106,15 +116,15 @@ impl fmt::Debug for X64Relocation {
 
 #[derive(Default, Debug, Clone)]
 pub struct SymbolInfo {
-    pub name : String,
-    pub symbol : Symbol
+    pub name: String,
+    pub symbol: file::Symbol,
 }
 
 impl SymbolInfo {
-    pub fn from(s: &Symbol, name : &str) -> SymbolInfo {
+    pub fn from(s: &file::Symbol, name: &str) -> SymbolInfo {
         SymbolInfo {
             name: name.to_string(),
-            symbol: s.clone()
+            symbol: s.clone(),
         }
     }
 
@@ -123,27 +133,44 @@ impl SymbolInfo {
     }
 }
 
-#[derive(Default, Debug)]
-#[repr(u64)]
-pub enum X64ReloType {
-    #[default]
-    R_AMD64_NONE = 0,
-    R_AMD64_PLT32 = 4,
-    R_UNKNOWN = 0xffffffff
-}
+// An executable has a very specific layout
+//   [ 64 bytes             ] File Header
+//   [ 56*(# phrs) bytes    ] Program Header Table
+//   [ `pre_text_pad` bytes ] Padding
+//   [ sh.size bytes        ] Text Section
+//   [ sh.size bytes        ] Section Header String Table
+//   [ 64*(# shrs) bytes    ] Section Header Table
 
 #[derive(Debug, Default)]
 pub struct Executable {
-    pub entry_point: u64,
-    pub bytes: Vec<u8>,
-    pub alignnent_padding : usize,
-    pub shstrtab : Vec<u8>,
-    pub num_program_headers : usize
+    // Fields match final on-disk layout order
+    pub file_header: file::FileHeader,
+    pub program_headers: Vec<file::ProgramHeader>,
+    pub pre_text_pad: usize,
+    pub text_section: Vec<u8>,
+    pub shstrtab: string_table::StrTab,
+    pub section_headers: Vec<file::SectionHeader>, // Always last
 }
 
-
 impl Executable {
-    pub fn size_in_file(&self) -> usize {
-        64 + (56*self.num_program_headers) + self.bytes.len() + self.alignnent_padding + self.shstrtab.len()
+    pub fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+
+        bytes.extend_from_slice(as_u8_slice(&self.file_header));
+        for phdr in self.program_headers.clone() {
+            bytes.extend_from_slice(as_u8_slice(&phdr));
+        }
+        bytes.extend(vec![0; self.pre_text_pad]);
+        bytes.extend_from_slice(&self.text_section);
+        bytes.extend_from_slice(&self.shstrtab.bytes);
+        for shdr in self.section_headers.clone() {
+            bytes.extend_from_slice(as_u8_slice(&shdr));
+        }
+        bytes
     }
+}
+
+// Function that converts to byte array. Slightly modified from https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
+fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    unsafe { std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>()) }
 }
