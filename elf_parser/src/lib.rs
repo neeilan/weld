@@ -1,6 +1,6 @@
 use std::vec::Vec;
 
-pub fn parse(path: &str, bytes: Vec<u8>) -> elf::logical::Relocatable {
+pub fn parse(path: &str, bytes: &Vec<u8>) -> elf::logical::Relocatable {
     let header = parse_header(&bytes);
     let section_headers = parse_section_headers(&bytes, &header);
     let section_names = parse_section_name_string_table(&bytes, &section_headers, &header);

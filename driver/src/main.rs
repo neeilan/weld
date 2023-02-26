@@ -12,7 +12,7 @@ fn main() {
                 match fs::read(path) {
                     Ok(bytes) => {
                         println!("\n=============================================================");
-                        let reloc = elf_parser::parse(path, bytes);
+                        let reloc = elf_parser::parse(path, &bytes);
                         println!("{:?}", reloc);
                         relocatables.push(reloc);
                     }
@@ -24,11 +24,10 @@ fn main() {
     }
 
     println!("\n======================== WELD ===========================");
-    let exec_or = weld_core::link(&relocatables);
-    match exec_or {
+    match weld_core::link(&relocatables) {
         Ok(exec) => {
             let mut file = std::fs::OpenOptions::new()
-                .create(true) // To create a new file
+                .create(true)
                 .write(true)
                 .open("./weld.out")
                 .unwrap();
