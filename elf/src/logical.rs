@@ -175,7 +175,7 @@ impl Executable {
         }
         bytes.extend(vec![0; self.pre_text_pad]);
         bytes.extend_from_slice(&self.text_section);
-        bytes.extend_from_slice(&self.shstrtab.bytes);
+        bytes.extend_from_slice(&self.shstrtab.get_bytes());
         for shdr in self.section_headers.clone() {
             bytes.extend_from_slice(as_u8_slice(&shdr));
         }
