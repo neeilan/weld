@@ -1,6 +1,6 @@
 use elf::logical::Executable;
 use iced_x86::{Decoder, DecoderOptions, Formatter, GasFormatter, Instruction};
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 extern crate elf;
 
@@ -36,7 +36,7 @@ pub fn link(
 
     for f in inputs {
         for r in f.relocations.clone() {
-            if matches!(r.relo_type(), elf::logical::RelocationType::PLT32) {
+            if matches!(r.relo_type(), elf::logical::RelocationType::Plt32) {
                 let symbol_addr = symbols
                     .get(&r.symbol.name)
                     .expect("Couldn't find symbol")
@@ -52,7 +52,12 @@ pub fn link(
                 exec.text_section[base_addr + r.offset + 2] = (new_addr >> 16 & 0xff) as u8;
                 exec.text_section[base_addr + r.offset + 3] = (new_addr >> 24 & 0xff) as u8;
             } else {
-                println!("Unknown relo_type {:#x}", r.relo_type() as usize);
+                println!(
+                    "Unhandled relo_type {:#x}  in {} ; full relo: [{:?}]",
+                    r.relo_type() as usize,
+                    f.path,
+                    r
+                );
             }
         }
     }
@@ -103,7 +108,7 @@ fn get_pre_text_pad(num_program_headers: usize) -> usize {
     // The man page says 'loadable process segments must have congruent values
     // for p_vaddr and p_offset, modulo the page size.' Not quite sure what this
     // means - but aligning right at a page boundary makes a lot of sense for mmap-ing.
-    // I played with other alignments - some of which led to segfaults on execve ¯\_(ツ)_/¯ 
+    // I played with other alignments - some of which led to segfaults on execve ¯\_(ツ)_/¯
     let page_size: usize = 4096;
     let unpadded_text_offset =
         elf::file::FILE_HEADER_SIZE + num_program_headers * elf::file::PROGRAM_HEADER_SIZE;
@@ -117,16 +122,21 @@ fn get_pre_text_pad(num_program_headers: usize) -> usize {
 // Precondition: The following fields in `e` must be correctly populated:
 //    - text_section
 //    - pre_text_pad
-pub fn build_header(e : &Executable, program_header_entry_count: u16, section_header_entry_count : u16, entrypoint_offset_from_text_start : u64) -> elf::file::FileHeader {
+pub fn build_header(
+    e: &Executable,
+    program_header_entry_count: u16,
+    section_header_entry_count: u16,
+    entrypoint_offset_from_text_start: u64,
+) -> elf::file::FileHeader {
     let mut hdr = elf::file::FileHeader::default();
     hdr.identification.magic = [0x7f, 0x45, 0x4c, 0x46];
-    hdr.identification.format_class = 2;   // 64-bit
-    hdr.identification.endianness = 1;     // little-endian
+    hdr.identification.format_class = 2; // 64-bit
+    hdr.identification.endianness = 1; // little-endian
     hdr.identification.format_version = 1; // original ELF
-    hdr.identification.os_abi = 0;         // System V
-    hdr.object_file_type = 0x02;           // ET_EXEC
-    hdr.machine_type = 0x3e;               // AMD x86-64
-    hdr.object_file_version = 1;           // original ELF
+    hdr.identification.os_abi = 0; // System V
+    hdr.object_file_type = 0x02; // ET_EXEC
+    hdr.machine_type = 0x3e; // AMD x86-64
+    hdr.object_file_version = 1; // original ELF
     hdr.processor_specific_flags = 0x00000102;
     hdr.file_header_size = elf::file::FILE_HEADER_SIZE as u16;
     hdr.program_header_offset = elf::file::FILE_HEADER_SIZE as u64;
@@ -183,7 +193,9 @@ pub fn build_sht(e: &mut elf::logical::Executable) -> Vec<elf::file::SectionHead
         section_type: elf::file::SectionType::ProgramData,
         flags: elf::file::SectionFlags::Alloc | elf::file::SectionFlags::Executable,
         virtual_address: 0x400100,
-        offset: (elf::file::FILE_HEADER_SIZE + (e.file_header.program_header_entry_count as usize) * elf::file::PROGRAM_HEADER_SIZE + e.pre_text_pad) as u64,
+        offset: (elf::file::FILE_HEADER_SIZE
+            + (e.file_header.program_header_entry_count as usize) * elf::file::PROGRAM_HEADER_SIZE
+            + e.pre_text_pad) as u64,
         size: e.text_section.len() as u64,
         link_to_other_section: 0,
         misc_info: 0,

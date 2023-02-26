@@ -10,4 +10,5 @@ Cargo.lock
 **/*.rs.bk
 
 
-testdata
+a.out
+weld.out

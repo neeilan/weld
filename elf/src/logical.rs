@@ -72,7 +72,14 @@ impl Relocatable {
 pub enum RelocationType {
     #[default]
     None = 0,
-    PLT32 = 4,
+    Abs64 = 1,
+    Abs32 = 2,
+    Plt32 = 4,
+    Copy = 5,
+    GlobalData = 6,
+    JumpSlot = 7,
+    RelativeToReloc = 8,
+    ThreadPtrOffset = 10, // Used with TLS - see https://akkadia.org/drepper/tls.pdf
     Unknown = 0xffffffff,
 }
 
@@ -95,20 +102,26 @@ impl Relocation {
     }
     // Processor-specific: https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter7-2/index.html
     pub fn relo_type(&self) -> RelocationType {
-        match self.info & 0xffffffff {
-            4 => RelocationType::PLT32,
+        match self.raw_relo_type() {
+            4 => RelocationType::Plt32,
             _ => RelocationType::Unknown,
         }
+    }
+
+    fn raw_relo_type(&self) -> u64 {
+        self.info & 0xffffffff
     }
 }
 
 impl fmt::Debug for Relocation {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.write_fmt(format_args!(
-            "X64Reloc < symbol=[{}] offset={:#x} addend={} type={:?} >",
+            "Relocation < symbol=[{:?} name={}] offset={:#x} addend={} raw_type={:#x} type={:?} >",
+            self.symbol.symbol,
             self.symbol.name,
             self.offset,
             self.addend,
+            self.raw_relo_type(),
             self.relo_type()
         ))
     }
@@ -170,7 +183,8 @@ impl Executable {
     }
 }
 
-// Function that converts to byte array. Slightly modified from https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
+// Function that converts to byte array.
+// Slightly modified from https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
 fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>()) }
 }
