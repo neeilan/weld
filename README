@@ -19,8 +19,7 @@ In the meantime, one may simply try the `check.sh` script which:
 
 Target Platform
 ---------------
-Portability isn't a stated goal - both weld and the executables it creates are meant to run on x86-64 Linux (System V) targets.
-The code reflects this intention and avoids implementing unneeded logic like handling 32-bit versions of ELF structures.
+Portability isn't a stated goal - both weld and the executables it creates are meant to run on x86-64 Linux (System V) targets. The code reflects this intention and avoids implementing unneeded logic like handling 32-bit versions of ELF structures.
  
 
 Feature support
