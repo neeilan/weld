@@ -5,21 +5,24 @@ use std::io::Write;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    if args.len() < 2 {
+        println!("Usage: weld <files>");
+        return;
+    }
+
     let mut relocatables = Vec::new();
     for i in 1..args.len() {
-        match args.get(i) {
-            Some(path) => {
-                match fs::read(path) {
-                    Ok(bytes) => {
-                        println!("\n=============================================================");
-                        let reloc = elf_parser::parse(path, &bytes);
-                        println!("{:?}", reloc);
-                        relocatables.push(reloc);
-                    }
-                    Err(err) => println!("{}", err),
+        let path = args.get(i).unwrap();
+        {
+            match fs::read(path) {
+                Ok(bytes) => {
+                    println!("\n=============================================================");
+                    let reloc = elf_parser::parse(path, &bytes);
+                    println!("{:?}", reloc);
+                    relocatables.push(reloc);
                 }
+                Err(err) => { println!("{} : {}", path, err); return; }
             }
-            None => println!("Usage: weld <files>"),
         };
     }
 
