@@ -1,14 +1,14 @@
-use crate::string_table;
+//! This module defines high-level 'logical' representations of ELF
+//!  structures. While the on-disk layout (defined in elf::file) is
+//!  effective, manipulating fixed-size structures is often restrictive.
+//!
+//!  Therefore, these data structures, rather than the `file::` structs,
+//!  are used in the public API for the weld library. For example, in
+//!  the simplest terms, the weld library takes a collection of `Relocatable`s
+//!  and returns a single `Executable`.
 
-// This module defines high-level 'logical' representations of ELF
-// structures. While the on-disk layout (defined in elf::file) is
-/// effective, manipulating fixed-size structures is often restrictive.
-//
-// Therefore, these data structures, rather than the `file::` structs,
-// are used in the public API for the weld library. For example, in
-// the simplest terms, the weld library takes a collection of `Relocatable`s
-// and returns a single `Executable`.
 use super::file;
+use crate::string_table;
 use iced_x86::{Decoder, DecoderOptions, Formatter, GasFormatter, Instruction};
 use std::fmt;
 
@@ -23,17 +23,17 @@ pub struct Section {
 impl fmt::Debug for Section {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         if self.name != ".text" {
-            return fmt.write_fmt(format_args!(""));
+            return write!(fmt, "<Section {}>", self.name);
         }
 
-        fmt.write_fmt(format_args!(
+        write!(
+            fmt,
             "\n<Section [{}] size={} file_offset={} virtual_address={:X}>",
             self.name,
             self.bytes.len(),
             self.offset,
             self.virtual_address
-        ))
-        .unwrap();
+        )?;
         if self.name == ".text" {
             fmt.write_str("[Disassembly: \n").unwrap();
             let mut decoder = Decoder::with_ip(64, &self.bytes, self.offset, DecoderOptions::NONE);
@@ -170,14 +170,14 @@ impl Executable {
         let mut bytes = Vec::new();
 
         bytes.extend_from_slice(as_u8_slice(&self.file_header));
-        for phdr in self.program_headers.clone() {
-            bytes.extend_from_slice(as_u8_slice(&phdr));
+        for phdr in &self.program_headers {
+            bytes.extend_from_slice(as_u8_slice(phdr));
         }
         bytes.extend(vec![0; self.pre_text_pad]);
         bytes.extend_from_slice(&self.text_section);
-        bytes.extend_from_slice(&self.shstrtab.get_bytes());
-        for shdr in self.section_headers.clone() {
-            bytes.extend_from_slice(as_u8_slice(&shdr));
+        bytes.extend_from_slice(self.shstrtab.get_bytes());
+        for shdr in &self.section_headers {
+            bytes.extend_from_slice(as_u8_slice(shdr));
         }
         bytes
     }
@@ -187,4 +187,28 @@ impl Executable {
 // Slightly modified from https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
 fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>()) }
+}
+
+// Sincer we're using unsafe code for encoding, we need at least some basic checks
+// as the Rust type system can't verify it for us. For example, passing `&phdr`
+// instead of `phdr` to `as_u8_slice` in `encode` will write completely broken
+// outputs (guess how I know...)
+#[cfg(test)]
+mod tests {
+    use super::Executable;
+    use crate::file::*;
+
+    #[test]
+    fn trivial_encode() {
+        let mut e = Executable::default();
+        e.program_headers.push(ProgramHeader::default());
+        e.section_headers.push(SectionHeader::default());
+        e.text_section = vec![1, 2, 3];
+
+        assert_eq!(e.shstrtab.len(), 1); // Null char
+        assert_eq!(
+            e.encode().len(),
+            FILE_HEADER_SIZE + PROGRAM_HEADER_SIZE + SECTION_HEADER_SIZE + 3 + 1
+        );
+    }
 }

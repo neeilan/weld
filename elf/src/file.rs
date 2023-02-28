@@ -1,16 +1,16 @@
-// This module defines data structures that reflect the on-disk
-// ELF representation.
-//
-// The structures and explanations mostly came directly from the
-// ELF man page [1] and/or Oracle's Linker and Libraries Guide [2]
-//
-// These definitions are not intended to exhaustively model the
-// ELF spec across all platforms. Rather, they are added on an
-// as-needed basis to link progressivel-complex test programs on
-// my 64-bit x86-64 Linux machine.
-//
-// [1] https://man7.org/linux/man-pages/man5/elf.5.html
-// [2] https://docs.oracle.com/cd/E19683-01/816-1386/index.html
+//! This module defines data structures that reflect the on-disk
+//! ELF representation.
+//!
+//! The structures and explanations mostly came directly from the
+//! ELF man page [1] and/or Oracle's Linker and Libraries Guide [2]
+//!
+//! These definitions are not intended to exhaustively model the
+//! ELF spec across all platforms. Rather, they are added on an
+//! as-needed basis to link progressivel-complex test programs on
+//! my 64-bit x86-64 Linux machine.
+//!
+//! [1] https://man7.org/linux/man-pages/man5/elf.5.html
+//! [2] https://docs.oracle.com/cd/E19683-01/816-1386/index.html
 
 //  Commmon
 // =========

@@ -1,11 +1,11 @@
-// This module abstracts ELF string tables, making them easier
-// to use and build. StrTab does not do fancy string interning
-// so 'carpet' and 'pet' will not overlap on disk unlike many
-// implementations, but it gets the job done for simple tables.
+//! This module abstracts ELF string tables, making them easier
+//! to use and build. StrTab does not do fancy string interning
+//! so 'carpet' and 'pet' will not overlap on disk unlike many
+//! implementations, but it gets the job done for simple tables.
 
 #[derive(Debug)]
 pub struct StrTab {
-    bytes: Vec<u8>
+    bytes: Vec<u8>,
 }
 
 impl StrTab {
@@ -15,19 +15,19 @@ impl StrTab {
         }
     }
 
-    pub fn at(&self, i: usize) -> Option<String> {
+    pub fn get(&self, i: usize) -> Option<String> {
         let mut buffer = String::new();
         for j in i..self.bytes.len() {
-            let c = self.bytes[j as usize];
+            let c = self.bytes[j];
             if c == 0 {
-                return Some(buffer.clone());
+                return Some(buffer);
             }
             buffer.push(c as char);
         }
         None
     }
 
-    pub fn insert(&mut self, s : &str) -> usize {
+    pub fn insert(&mut self, s: &str) -> usize {
         let pos = self.bytes.len();
         self.bytes.extend(s.as_bytes());
         self.bytes.push(0);
@@ -45,10 +45,9 @@ impl StrTab {
 
 impl Default for StrTab {
     fn default() -> Self {
-        StrTab::new(&[0 as u8])
+        StrTab::new(&[0])
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -65,15 +64,15 @@ mod tests {
 
         assert_eq!(st.len(), 9);
 
-        assert_eq!(st.at(foo), Some("foo".to_string()));
-        assert_eq!(st.at(bar), Some("bar".to_string()));
+        assert_eq!(st.get(foo), Some("foo".to_string()));
+        assert_eq!(st.get(bar), Some("bar".to_string()));
     }
 
     #[test]
     fn from_buf() {
-        let buf : Vec<u8> = vec![0,65, 66, 67, 0];
+        let buf: Vec<u8> = vec![0, 65, 66, 67, 0];
         let st = StrTab::new(&buf);
-        assert_eq!(st.at(0), Some("".to_string()));
-        assert_eq!(st.at(1), Some("ABC".to_string()));
+        assert_eq!(st.get(0), Some("".to_string()));
+        assert_eq!(st.get(1), Some("ABC".to_string()));
     }
 }

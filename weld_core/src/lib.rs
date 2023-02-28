@@ -5,10 +5,10 @@ use std::collections::HashMap;
 extern crate elf;
 
 #[derive(Debug, Default)]
-pub struct WeldError {}
+pub struct WeldError;
 
 pub fn link(
-    inputs: &Vec<elf::logical::Relocatable>,
+    inputs: &[elf::logical::Relocatable],
 ) -> Result<elf::logical::Executable, Vec<WeldError>> {
     let mut exec = elf::logical::Executable::default();
 
@@ -23,24 +23,23 @@ pub fn link(
         exec.text_section
             .extend_from_slice(f.sections[text_section_offset].bytes.as_slice());
 
-        for s in f.symbols.clone() {
+        for s in &f.symbols {
             if s.is_defined() {
                 // Assume defined relative to .text for now. st_shndx identifies which section we're *actually* relative to.
-                symbols.insert(s.name, section_start_in_exec + s.symbol.value as usize);
+                symbols.insert(s.name.clone(), section_start_in_exec + s.symbol.value as usize);
             }
         }
     }
 
-    println!("\nSymbols defined: {:?}", symbols);
-    println!("\nsection starts: {:?}", start_of_section);
+    println!("\nSymbols defined: {symbols:?}");
+    println!("\nsection starts: {start_of_section:?}");
 
     for f in inputs {
-        for r in f.relocations.clone() {
+        for r in &f.relocations {
             if matches!(r.relo_type(), elf::logical::RelocationType::Plt32) {
-                let symbol_addr = symbols
+                let symbol_addr = *symbols
                     .get(&r.symbol.name)
-                    .expect("Couldn't find symbol")
-                    .clone();
+                    .expect("Couldn't find symbol");
                 let base_addr = start_of_section
                     .get(&f.path)
                     .expect("Unknown start of section in exectuable");
@@ -62,10 +61,9 @@ pub fn link(
         }
     }
 
-    let entry_point = symbols
+    let entry_point = *symbols
         .get("_start")
-        .expect("Entrypoint symbol _start not found")
-        .clone() as u64;
+        .expect("Entrypoint symbol _start not found") as u64;
 
     let mut decoder = Decoder::with_ip(64, &exec.text_section, 0, DecoderOptions::NONE);
     let mut formatter = GasFormatter::new();
@@ -156,7 +154,7 @@ pub fn build_header(
 
 // Precondition - executable's text_section and pre_text_pad must be populated
 pub fn build_pht(e: &elf::logical::Executable) -> Vec<elf::file::ProgramHeader> {
-    assert!(e.text_section.len() > 0);
+    assert!(!e.text_section.is_empty());
     assert!(e.file_header.program_header_entry_count == 2);
 
     // The ELF header and program headers comprise a segment
@@ -216,7 +214,9 @@ pub fn build_sht(e: &mut elf::logical::Executable) -> Vec<elf::file::SectionHead
         entry_size: 0,
     };
 
-    let mut sh0 = elf::file::SectionHeader::default();
-    sh0.flags = elf::file::SectionFlags::Alloc | elf::file::SectionFlags::Executable;
+    let sh0 = elf::file::SectionHeader {
+    flags : elf::file::SectionFlags::Alloc | elf::file::SectionFlags::Executable,
+    ..Default::default()
+    };
     vec![sh0, sh_text, sh_shstrtab]
 }

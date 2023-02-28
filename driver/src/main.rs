@@ -13,17 +13,18 @@ fn main() {
     let mut relocatables = Vec::new();
     for i in 1..args.len() {
         let path = args.get(i).unwrap();
-        {
-            match fs::read(path) {
-                Ok(bytes) => {
-                    println!("\n=============================================================");
-                    let reloc = elf_parser::parse(path, &bytes);
-                    println!("{:?}", reloc);
-                    relocatables.push(reloc);
-                }
-                Err(err) => { println!("{} : {}", path, err); return; }
+        match fs::read(path) {
+            Ok(bytes) => {
+                println!("\n=============================================================");
+                let reloc = elf_parser::parse(path, &bytes);
+                println!("{reloc:?}");
+                relocatables.push(reloc);
             }
-        };
+            Err(err) => {
+                println!("{path} : {err}");
+                return;
+            }
+        }
     }
 
     println!("\n======================== WELD ===========================");
@@ -38,7 +39,7 @@ fn main() {
                 .expect("Write to file failed");
         }
         Err(errs) => {
-            println!("{:?}", errs)
+            println!("{errs:?}")
         }
     }
 }
